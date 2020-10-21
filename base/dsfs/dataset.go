@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -298,13 +299,16 @@ func CreateDataset(
 	}
 	ds.SetBodyFile(bodyFile)
 
+	var hooks []*MerkelizeHook
+
 	// TODO (b5) - set renderedFile to a zero-length (but non-nil) file so the count
 	// in WriteDataset is correct
 	if sw.ShouldRender && ds.Viz != nil && ds.Viz.ScriptFile() != nil && ds.Viz.RenderedFile() == nil {
-		ds.Viz.SetRenderedFile(qfs.NewMemfileBytes("rendered", []byte{}))
+		ds.Viz.SetRenderedFile(qfs.NewMemfileBytes(PackageFileRenderedViz.String(), []byte{}))
+		hooks = append(hooks, renderVizMerkleHook(dsLk, ds, bodyFile.FileName()))
 	}
 
-	path, err := WriteDataset(ctx, dsLk, destination, ds, pk, sw.Pin)
+	path, err := WriteDataset(ctx, dsLk, destination, ds, pk, sw.Pin, hooks...)
 	if err != nil {
 		log.Debug(err.Error())
 		return "", err
@@ -319,6 +323,42 @@ func concatFunc(f1, f2 func()) func() {
 	}
 }
 
+// MerkelizeCallback is a function that's called when a given path has been
+// written to the content addressed filesystem
+type MerkelizeCallback func(ctx context.Context, store cafs.Filestore, merkelizedPaths map[string]string) (io.Reader, error)
+
+// MerkelizeHook configures a callback function to be executed on a saved
+// file, at a specific point in the merkelization process
+type MerkelizeHook struct {
+	// path of file to fire on
+	inputFilename string
+	path          string
+	once          sync.Once
+	// slice of pre-merkelized paths that need to be saved before the hook
+	// can be called
+	requiredPaths []string
+	// function to call
+	callback MerkelizeCallback
+}
+
+// NewMerkelizeHook creates
+func NewMerkelizeHook(inputFilename string, cb MerkelizeCallback, requiredPaths ...string) *MerkelizeHook {
+	return &MerkelizeHook{
+		inputFilename: inputFilename,
+		requiredPaths: requiredPaths,
+		callback:      cb,
+	}
+}
+
+func (h *MerkelizeHook) hasRequiredPaths(merkelizedPaths map[string]string) bool {
+	for _, p := range h.requiredPaths {
+		if _, ok := merkelizedPaths[p]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // WriteDataset writes a dataset to a cafs, replacing subcomponents of a dataset with path references
 // during the write process. Directory structure is according to PackageFile naming conventions.
 // This method is currently exported, but 99% of use cases should use CreateDataset instead of this
@@ -330,12 +370,15 @@ func WriteDataset(
 	ds *dataset.Dataset,
 	pk crypto.PrivKey,
 	pin bool,
+	hooks ...*MerkelizeHook,
 ) (string, error) {
 	if ds == nil || ds.IsEmpty() {
 		return "", fmt.Errorf("cannot save empty dataset")
 	}
 
-	var rollback = func() { log.Debug("rolling back failed write operation") }
+	var rollback = func() {
+		log.Debug("rolling back failed write operation")
+	}
 	defer func() {
 		if rollback != nil {
 			log.Debug("InitDataset rolling back...")
@@ -393,9 +436,13 @@ func WriteDataset(
 
 	var finalPath string
 	done := make(chan error, 0)
+	merkelizedPaths := map[string]string{}
+
 	go func() {
 		for ao := range adder.Added() {
+			log.Debugf("added name=%s hash=%s", ao.Name, ao.Path)
 			path := ao.Path
+			merkelizedPaths[ao.Name] = ao.Path
 			finalPath = ao.Path
 			rollback = concatFunc(func() {
 				log.Debugf("removing: %s", path)
@@ -403,6 +450,26 @@ func WriteDataset(
 					log.Debugf("error removing path: %s: %s", path, err)
 				}
 			}, rollback)
+
+			for i, hook := range hooks {
+				if hook.hasRequiredPaths(merkelizedPaths) {
+					hook.once.Do(func() {
+						log.Debugf("calling merkelizeHook path=%s", hook.inputFilename)
+						r, err := hook.callback(ctx, destination, merkelizedPaths)
+						if err != nil {
+							done <- err
+							return
+						}
+						if err = adder.AddFile(ctx, qfs.NewMemfileReader(hook.inputFilename, r)); err != nil {
+							done <- err
+							return
+						}
+					})
+					hooks = append(hooks[:i], hooks[i:]...)
+				} else {
+					log.Debugf("missing required paths for hook path=%s required=%#v merkelized=%#v", hook.inputFilename, hook.requiredPaths, merkelizedPaths)
+				}
+			}
 
 			switch ao.Name {
 			case PackageFileStructure.String():
@@ -447,15 +514,17 @@ func WriteDataset(
 				if ds.Viz != nil {
 					ds.Viz.DropTransientValues()
 					vizScript := ds.Viz.ScriptFile()
-					vizRendered := ds.Viz.RenderedFile()
+
+					// vizRendered := ds.Viz.RenderedFile()
 					// add task for the viz.json
-					if vizRendered != nil {
-						// add the rendered visualization
-						// and add working group for adding the viz script file
-						vrFile := qfs.NewMemfileReader(PackageFileRenderedViz.String(), vizRendered)
-						defer vrFile.Close()
-						adder.AddFile(ctx, vrFile)
-					} else if vizScript != nil {
+					// if vizRendered != nil {
+					// // add the rendered visualization
+					// // and add working group for adding the viz script file
+					// vrFile := qfs.NewMemfileReader(PackageFileRenderedViz.String(), vizRendered)
+					// defer vrFile.Close()
+					// adder.AddFile(ctx, vrFile)
+
+					if vizScript != nil {
 						// add the vizScript
 						vsFile := qfs.NewMemfileReader(vizScriptFilename, vizScript)
 						defer vsFile.Close()
@@ -544,7 +613,6 @@ func WriteDataset(
 				dsLk.Lock()
 				if ds.Commit != nil {
 					ds.Commit.DropTransientValues()
-
 					signedBytes, err := pk.Sign(ds.SigningBytes())
 					if err != nil {
 						log.Debug(err.Error())
@@ -552,9 +620,7 @@ func WriteDataset(
 						return
 					}
 					ds.Commit.Signature = base64.StdEncoding.EncodeToString(signedBytes)
-
 					log.Debugf("generateCommit complete. signature=%q", ds.Commit.Signature)
-
 					cmf, err := JSONFile(PackageFileCommit.String(), ds.Commit)
 					if err != nil {
 						done <- fmt.Errorf("encoding commit component to json: %w", err)

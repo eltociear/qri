@@ -11,7 +11,6 @@ import (
 	crypto "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/qri-io/dataset"
 	"github.com/qri-io/dataset/dsio"
-	"github.com/qri-io/dataset/dsviz"
 	"github.com/qri-io/jsonschema"
 	"github.com/qri-io/qfs"
 	"github.com/qri-io/qfs/cafs"
@@ -260,15 +259,17 @@ func (cff *computeFieldsFile) handleRows(ctx context.Context) {
 			return
 		}
 
-		if cff.sw.ShouldRender && cff.ds.Viz != nil && cff.ds.Viz.ScriptFile() != nil {
-			log.Debugf("rendering dataset viz")
-			renderedFile, err := dsviz.Render(cff.ds)
-			if err != nil {
-				log.Debug(err.Error())
-				cff.done <- fmt.Errorf("rendering viz component: %w", err)
-			}
-			cff.ds.Viz.SetRenderedFile(renderedFile)
-		}
+		// if cff.sw.ShouldRender && cff.ds.Viz != nil && cff.ds.Viz.ScriptFile() != nil {
+		// 	log.Debugf("rendering dataset viz")
+		// 	renderedFile, err := dsviz.Render(cff.ds)
+		// 	if err != nil {
+		// 		log.Debug(err.Error())
+		// 		cff.done <- fmt.Errorf("rendering viz component: %w", err)
+		// 		return
+		// 	}
+		// 	cff.ds.Viz.SetRenderedFile(renderedFile)
+		// 	log.Debug("rendered")
+		// }
 
 		cff.done <- nil
 	}()
