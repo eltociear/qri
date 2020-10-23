@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/qri-io/dataset"
+	"github.com/qri-io/qfs"
 	"github.com/qri-io/qfs/cafs"
 	"github.com/qri-io/qri/base/dsfs"
 	"github.com/qri-io/qri/dsref"
@@ -35,11 +36,11 @@ func Recall(ctx context.Context, store cafs.Filestore, ref dsref.Ref, revStr str
 
 // LoadRevs grabs a component of a dataset that exists <n>th generation ancestor
 // of the referenced version, where presence of a component in a previous snapshot constitutes ancestry
-func LoadRevs(ctx context.Context, store cafs.Filestore, ref dsref.Ref, revs []*dsref.Rev) (res *dataset.Dataset, err error) {
+func LoadRevs(ctx context.Context, fs qfs.Filesystem, ref dsref.Ref, revs []*dsref.Rev) (res *dataset.Dataset, err error) {
 	var ds *dataset.Dataset
 	res = &dataset.Dataset{}
 	for {
-		if ds, err = dsfs.LoadDataset(ctx, store, ref.Path); err != nil {
+		if ds, err = dsfs.LoadDataset(ctx, fs, ref.Path); err != nil {
 			return
 		}
 

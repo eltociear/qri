@@ -104,7 +104,7 @@ func TestGenerateFilename(t *testing.T) {
 	}
 }
 
-func testStore() (cafs.Filestore, map[string]string, error) {
+func testStore() (qfs.Filesystem, map[string]string, error) {
 	ctx := context.Background()
 	dataf := qfs.NewMemfileBytes("movies.csv", []byte("movie\nup\nthe incredibles"))
 
@@ -129,14 +129,14 @@ func testStore() (cafs.Filestore, map[string]string, error) {
 	}
 	ds.SetBodyFile(dataf)
 
-	store := cafs.NewMapstore()
-	dskey, err := dsfs.WriteDataset(ctx, store, ds, true)
+	fs := qfs.NewMemFS()
+	dskey, err := dsfs.WriteDataset(ctx, fs, ds, true)
 	if err != nil {
-		return store, ns, err
+		return fs, ns, err
 	}
 	ns["movies"] = dskey
 
-	return store, ns, nil
+	return fs, ns, nil
 }
 
 func testStoreWithVizAndTransform() (cafs.Filestore, map[string]string, error) {

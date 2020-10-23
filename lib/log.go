@@ -105,7 +105,7 @@ func (m *LogMethods) Log(params *LogParams, res *[]DatasetLogItem) error {
 		items[i].Foreign = !local
 
 		if local {
-			if ds, err := dsfs.LoadDataset(ctx, m.inst.repo.Store(), item.Path); err == nil {
+			if ds, err := dsfs.LoadDataset(ctx, m.inst.repo.Filesystem(), item.Path); err == nil {
 				if ds.Commit != nil {
 					items[i].CommitMessage = ds.Commit.Message
 				}

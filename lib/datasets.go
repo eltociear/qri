@@ -882,7 +882,7 @@ func (m *DatasetMethods) Remove(p *RemoveParams, res *RemoveResponse) error {
 
 		if info.FSIPath != "" && !p.KeepFiles {
 			// Load dataset version that is at head after newer versions are removed
-			ds, err := dsfs.LoadDataset(ctx, m.inst.repo.Store(), info.Path)
+			ds, err := dsfs.LoadDataset(ctx, m.inst.repo.Filesystem(), info.Path)
 			if err != nil {
 				log.Debugf("Remove, dsfs.LoadDataset failed, error: %s", err)
 				return err
@@ -1034,7 +1034,7 @@ func (m *DatasetMethods) Validate(p *ValidateParams, res *ValidateResponse) erro
 				return fmt.Errorf("loading linked dataset: %w", err)
 			}
 		} else {
-			if ds, err = dsfs.LoadDataset(ctx, m.inst.repo.Store(), ref.Path); err != nil {
+			if ds, err = dsfs.LoadDataset(ctx, m.inst.repo.Filesystem(), ref.Path); err != nil {
 				return fmt.Errorf("loading dataset: %w", err)
 			}
 		}

@@ -434,7 +434,7 @@ func TestDatasetRequestsGet(t *testing.T) {
 		t.Fatalf("error getting path: %s", err.Error())
 	}
 
-	moviesDs, err := dsfs.LoadDataset(ctx, mr.Store(), ref.Path)
+	moviesDs, err := dsfs.LoadDataset(ctx, mr.Filesystem(), ref.Path)
 	if err != nil {
 		t.Fatalf("error loading dataset: %s", err.Error())
 	}

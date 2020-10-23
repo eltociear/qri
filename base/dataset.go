@@ -16,12 +16,12 @@ import (
 )
 
 // NewLocalDatasetLoader creates a dsfs.Loader that operates on a filestore
-func NewLocalDatasetLoader(r repo.Repo) dsref.Loader {
-	return loader{r}
+func NewLocalDatasetLoader(fs qfs.Filesystem) dsref.Loader {
+	return loader{fs}
 }
 
 type loader struct {
-	r repo.Repo
+	fs qfs.Filesystem
 }
 
 // LoadDataset fetches, derefernces and opens a dataset from a reference
@@ -31,12 +31,12 @@ func (l loader) LoadDataset(ctx context.Context, ref dsref.Ref, source string) (
 		return nil, fmt.Errorf("only local datasets can be loaded")
 	}
 
-	ds, err := dsfs.LoadDataset(ctx, l.r.Store(), ref.Path)
+	ds, err := dsfs.LoadDataset(ctx, l.fs, ref.Path)
 	if err != nil {
 		return nil, err
 	}
 
-	err = OpenDataset(ctx, l.r.Filesystem(), ds)
+	err = OpenDataset(ctx, l.fs, ds)
 	return ds, err
 }
 
@@ -155,7 +155,7 @@ func CloseDataset(ds *dataset.Dataset) (err error) {
 
 // ListDatasets lists datasets from a repo
 func ListDatasets(ctx context.Context, r repo.Repo, term string, limit, offset int, RPC, publishedOnly, showVersions bool) (res []reporef.DatasetRef, err error) {
-	store := r.Store()
+	fs := r.Filesystem()
 	num, err := r.RefCount()
 	if err != nil {
 		return nil, err
@@ -194,7 +194,7 @@ func ListDatasets(ctx context.Context, r repo.Repo, term string, limit, offset i
 		}
 
 		if ref.Path != "" {
-			ds, err := dsfs.LoadDataset(ctx, store, ref.Path)
+			ds, err := dsfs.LoadDataset(ctx, fs, ref.Path)
 			if err != nil {
 				if strings.Contains(err.Error(), "not found") {
 					res[i].Foreign = true
@@ -271,12 +271,12 @@ func RawDatasetRefs(ctx context.Context, r repo.Repo) (string, error) {
 //
 // Deprecated - use LoadDataset instead
 func ReadDataset(ctx context.Context, r repo.Repo, path string) (ds *dataset.Dataset, err error) {
-	store := r.Store()
-	if store == nil {
+	fs := r.Filesystem()
+	if fs == nil {
 		return nil, cafs.ErrNotFound
 	}
 
-	return dsfs.LoadDataset(ctx, store, path)
+	return dsfs.LoadDataset(ctx, fs, path)
 }
 
 // PinDataset marks a dataset for retention in a store
